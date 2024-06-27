@@ -250,17 +250,26 @@ where PCS: PolynomialCommitmentScheme<E>
         let sumcheck_challenge_comm = phat.mul(&m).mul(&bag.selector);
 
         // let one_closure = |_: E::ScalarField| -> E::ScalarField {E::ScalarField::one()};
-        // let one_comm = tracker.track_mat_comm(Option::None, one_closure);
+        // let one_comm = tracker.track_mat_comm(Option::None, one_closure);ss
         // let gamma_clone = gamma.clone();
         // let gamma_closure = |scalar: E::ScalarField| -> E::ScalarField {gamma_clone};
         // let gamma_comm = tracker.track_mat_comm(Option::None, gamma_closure);
+
+
         let one_comm_id = tracker.get_next_id();
         let one_comm = tracker.transfer_prover_comm(one_comm_id);
-        assert_eq!(tracker.get_prover_comm_opening_val(one_comm.id), E::ScalarField::one());
+        assert_eq!(tracker.get_prover_polynomial_eval(one_comm.id), E::ScalarField::one());
         let gamma_comm_id = tracker.get_next_id();
         let gamma_comm = tracker.transfer_prover_comm(gamma_comm_id);
-        assert_eq!(tracker.get_prover_comm_opening_val(gamma_comm.id), gamma);
+        assert_eq!(tracker.get_prover_polynomial_eval(gamma_comm.id), gamma);
         let phat_check_poly = p.sub(&gamma_comm).mul(&phat).sub(&one_comm);
+
+        // let id_comm_id = tracker.get_next_id();
+        // let id_comm = tracker.transfer_prover_comm(one_comm_id); // moves comm and claimed eval to tracker
+        // let id_eval = succint_way_to_eval_id(proof.opening_point);
+        // assert_eq(id_fn_claimed_eval, id_eval);
+
+        
        
         // add the delayed prover claims to the tracker
         let sum_claim_v = tracker.get_prover_claimed_sum(sumcheck_challenge_comm.id);

@@ -47,7 +47,7 @@ pub struct VerifierTracker<E: Pairing, PCS: PolynomialCommitmentScheme<E>>{
 }
 
 impl<E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTracker<E, PCS> {
-    pub fn new(pcs_params: PCS::VerifierParam) -> Self {
+    pub fn new(pcs_params: PCS::VerifierParam, proof: CompiledZKSQLProof<E, PCS>) -> Self {
         Self {
             pcs_params,
             transcript: IOPTranscript::<E::ScalarField>::new(b"Initializing Tracnscript"),
@@ -56,7 +56,7 @@ impl<E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTracker<E, PCS> {
             materialized_openings: HashMap::new(),
             sum_check_claims: Vec::new(),
             zero_check_claims: Vec::new(),
-            proof: CompiledZKSQLProof::<E, PCS>::default(),
+            proof,
         }
     }
 
@@ -271,8 +271,8 @@ impl<E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTracker<E, PCS> {
     pub fn get_prover_comm(&self, id: TrackerID) -> Option<&Arc<PCS::Commitment>> { 
         self.proof.comms.get(&id) 
     }
-    pub fn get_prover_comm_opening_val(&self, id: TrackerID) -> Option<&E::ScalarField> {
-        self.proof.comm_opening_vals.get(&id)
+    pub fn get_prover_polynomial_eval(&self, id: TrackerID) -> Option<&E::ScalarField> {
+        self.proof.polynomial_evals.get(&id)
     }
 
     pub fn get_prover_claimed_sum(&self, id: TrackerID) -> Option<&E::ScalarField> {
@@ -359,10 +359,10 @@ impl <E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTrackerRef<E, PCS>
         tracker_ref_cell.borrow_mut().add_zerocheck_claim(poly_id);
     }
 
-    pub fn get_prover_comm_opening_val(&self, id: TrackerID) -> E::ScalarField {
+    pub fn get_prover_polynomial_eval(&self, id: TrackerID) -> E::ScalarField {
         let tracker_ref_cell: &RefCell<VerifierTracker<E, PCS>> = self.tracker_rc.borrow();
         let tracker = tracker_ref_cell.borrow();
-        let eval = tracker.get_prover_comm_opening_val(id).unwrap().clone();
+        let eval = tracker.get_prover_polynomial_eval(id).unwrap().clone();
         return eval;
     }
 
@@ -390,7 +390,7 @@ impl <E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTrackerRef<E, PCS>
                     panic!("VerifierTracker Error: attempted to transfer prover comm, but id not found: {}", id);
                 }
             }
-            val = tracker.get_prover_comm_opening_val(id).unwrap().clone();
+            val = tracker.get_prover_polynomial_eval(id).unwrap().clone();
         } 
         let mut tracker = tracker_ref_cell.borrow_mut();
         new_id = tracker.track_mat_comm(comm, val.clone());

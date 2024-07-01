@@ -38,7 +38,7 @@ use arithmetic::VirtualPolynomial;
 pub struct CompiledZKSQLProof<E: Pairing, PCS: PolynomialCommitmentScheme<E>> {
     pub sum_check_claims: HashMap<TrackerID, E::ScalarField>, // id -> [ sum_{i=0}^n p(i) ]
     pub comms: HashMap<TrackerID, Arc<PCS::Commitment>>,
-    pub polynomial_evals: HashMap<TrackerID, E::ScalarField>, // id -> p(comm_opening_point) 
+    pub polynomial_evals: HashMap<(TrackerID, Vec<E::ScalarField>), E::ScalarField>, // (id, point) -> eval, // id -> p(comm_opening_point) 
     pub opening_point: Vec<E::ScalarField>,
     pub opening_proof: PCS::Proof,
 }
@@ -49,7 +49,7 @@ pub struct CompiledZKSQLProof<E: Pairing, PCS: PolynomialCommitmentScheme<E>> {
     Clone(bound = "PCS: PolynomialCommitmentScheme<E>"),
 )]
 pub struct ProverTracker<E: Pairing, PCS: PolynomialCommitmentScheme<E>>{
-    pcs_param: PCS::ProverParam,
+    pub pcs_param: PCS::ProverParam,
     pub transcript: IOPTranscript<E::ScalarField>,
     pub id_counter: usize,
     pub materialized_polys: HashMap<TrackerID, Arc<DenseMultilinearExtension<E::ScalarField>>>, // underlying materialized polynomials, keyed by label
@@ -391,14 +391,12 @@ impl<E: Pairing, PCS: PolynomialCommitmentScheme<E>> ProverTracker<E, PCS> {
             sumcheck_val_map.insert(claim.label.clone(), claim.claimed_sum);
         }
 
-        
-        let mut placeholder_poly_evals: HashMap<TrackerID, E::ScalarField> = HashMap::new();
+        let placeholder_opening_point = vec![E::ScalarField::zero(); nv];
+        let mut placeholder_poly_evals: HashMap<(TrackerID, Vec<E::ScalarField>), E::ScalarField> = HashMap::new();
         for (id, _) in self.materialized_polys.iter() {
-            placeholder_poly_evals.insert(id.clone(), E::ScalarField::zero());
+            placeholder_poly_evals.insert((id.clone(), placeholder_opening_point.clone()), E::ScalarField::zero());
         }
 
-
-        let placeholder_opening_point = vec![E::ScalarField::zero(); nv];
         let placeholder_opening_proof = PCS::open(&self.pcs_param, &DenseMultilinearExtension::<E::ScalarField>::from_evaluations_vec(nv, vec![E::ScalarField::zero(); 2_usize.pow(nv as u32)]), &placeholder_opening_point).unwrap().0;
         CompiledZKSQLProof {
             sum_check_claims: sumcheck_val_map,

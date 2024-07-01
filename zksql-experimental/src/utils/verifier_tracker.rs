@@ -13,6 +13,7 @@ use displaydoc::Display;
 use ark_serialize::CanonicalSerialize;
 use ark_std::One;
 use core::panic;
+use std::hash::Hash;
 use derivative::Derivative;
 use subroutines::PolynomialCommitmentScheme;
 use std::{
@@ -36,11 +37,12 @@ use crate::utils::prover_tracker::CompiledZKSQLProof;
     Clone(bound = "PCS: PolynomialCommitmentScheme<E>"),
 )]
 pub struct VerifierTracker<E: Pairing, PCS: PolynomialCommitmentScheme<E>>{
-    pcs_params: PCS::VerifierParam,
+    pub pcs_params: PCS::VerifierParam,
     pub transcript: IOPTranscript<E::ScalarField>,
     pub id_counter: usize,
-    pub materialized_openings: HashMap<TrackerID, E::ScalarField>, // map from id to Eval of commitment at proof.open_point
-    pub virtual_openings: HashMap<TrackerID, Vec<(E::ScalarField, Vec<TrackerID>)>>,
+    pub materialized_comms: HashMap<TrackerID, Arc<PCS::Commitment>>, // map from id to Commitment
+    pub virtual_comms: HashMap<TrackerID, Box<dyn Fn(&[E::ScalarField]) -> Result<(E::ScalarField), PCSError>>>, // id -> eval_fn
+    pub query_map: HashMap<(TrackerID, Vec<E::ScalarField>), E::ScalarField>, // (poly_id, point) -> eval
     pub sum_check_claims: Vec<TrackerSumcheckClaim<E::ScalarField>>,
     pub zero_check_claims: Vec<TrackerZerocheckClaim<E::ScalarField>>,
     pub proof: CompiledZKSQLProof<E, PCS>,
@@ -52,8 +54,9 @@ impl<E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTracker<E, PCS> {
             pcs_params,
             transcript: IOPTranscript::<E::ScalarField>::new(b"Initializing Tracnscript"),
             id_counter: 0,
-            virtual_openings: HashMap::new(),
-            materialized_openings: HashMap::new(),
+            materialized_comms: HashMap::new(),
+            virtual_comms: HashMap::new(),
+            query_map: HashMap::new(),
             sum_check_claims: Vec::new(),
             zero_check_claims: Vec::new(),
             proof,
@@ -72,17 +75,32 @@ impl<E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTracker<E, PCS> {
 
     pub fn track_mat_comm(
         &mut self, 
-        comm: Arc<PCS::Commitment>,
-        open_eval: E::ScalarField
+        comm: Arc<PCS::Commitment>
+    ) -> TrackerID {
+        // Create the new TrackerID
+        let id = self.gen_id();
+        
+        // // Add the commitment to the materialized map
+        // self.materialized_comms.insert(id.clone(), comm);
+        
+        // Create a virtual commitment for the interaction and decision phases
+        let mut eval_fn = Box::new(|point: &[E::ScalarField]| {self.eval_map.get(id, point)});
+        self.virtual_comms.insert(id.clone(), eval_fn);
+
+         // add the commitment to the transcript
+         self.transcript.append_serializable_element(b"comm", &comm);
+        id
+    }
+
+    pub fn track_virt_comm(
+        &mut self, 
+        eval_fn: Box<dyn Fn(&[E::ScalarField]) -> Result<(E::ScalarField), PCSError> + 'static>, 
     ) -> TrackerID {
         // Create the new TrackerID
         let id = self.gen_id();
 
         // Add the commitment to the materialized map
-        self.materialized_openings.insert(id.clone(), open_eval);
-
-        // add the commitment to the transcript
-        self.transcript.append_serializable_element(b"comm", &comm);
+        self.virtual_polynomials.insert(id.clone(), eval_fn);
 
         // Return the new TrackerID
         id
@@ -393,7 +411,7 @@ impl <E: Pairing, PCS: PolynomialCommitmentScheme<E>> VerifierTrackerRef<E, PCS>
             val = tracker.get_prover_polynomial_eval(id).unwrap().clone();
         } 
         let mut tracker = tracker_ref_cell.borrow_mut();
-        new_id = tracker.track_mat_comm(comm, val.clone());
+        new_id = tracker.track_mat_comm(comm);
 
         #[cfg(debug_assertions)] {
             assert_eq!(id, new_id, "VerifierTracker Error: attempted to transfer prover comm, but ids don't match: {}, {}", id, new_id);
